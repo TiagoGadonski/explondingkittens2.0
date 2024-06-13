@@ -1,0 +1,121 @@
+﻿@page "/gamesetup"
+@inject NavigationManager Navigation
+@using Blazored.LocalStorage
+@using BlazorApp2.Shared.Models
+@inject ILocalStorageService LocalStorage
+
+<h3>Configuração do Jogo</h3>
+
+<div>
+    <label for="numPlayers">Número de Jogadores:</label>
+    <input @bind="numPlayers" type="number" id="numPlayers" min="2" max="5" />
+
+    <button @onclick="StartGame">Iniciar Jogo</button>
+</div>
+
+@if (gameStarted)
+{
+    <h4>Cartas Distribuídas</h4>
+    <ul>
+        @foreach (var card in playerCards)
+        {
+            <li>
+                @card.Type @if (!string.IsNullOrEmpty(card.CatName))
+                {
+                    <span>- @card.CatName</span>
+                }
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private int numPlayers = 2;
+    private bool gameStarted = false;
+    private List<Card> playerCards = new List<Card>();
+    private List<Card> shuffledDeck;
+
+    [Inject] public NavigationManager NavigationManager { get; set; }
+
+    private List<Card> GenerateDeck(int numPlayers)
+    {
+        var cards = new List<Card>();
+
+        // Adicionar cartas especiais (45% ou menos do baralho)
+        for (int i = 0; i < 9; i++) // 9 * 6 = 54 cartas
+        {
+            cards.Add(new Card("Attack"));
+            cards.Add(new Card("Skip"));
+            cards.Add(new Card("Favor"));
+            cards.Add(new Card("Shuffle"));
+            cards.Add(new Card("See the Future"));
+            cards.Add(new Card("Nope"));
+        }
+
+        // Adicionar cartas de gatos
+        string[] catNames = { "Tacocat", "Hairy Potato Cat", "Rainbow Ralphing Cat", "Beard Cat", "Cattermelon" };
+        foreach (var catName in catNames)
+        {
+            for (int i = 0; i < 4; i++) // Adiciona 4 de cada carta de gato
+            {
+                cards.Add(new Card("Cat Card", catName));
+            }
+        }
+
+        // Adicionar cartas de Exploding Kitten e Defuse
+        for (int i = 0; i < numPlayers - 1; i++)
+        {
+            cards.Add(new Card("Exploding Kitten"));
+        }
+        for (int i = 0; i < (numPlayers + 2); i++) // Corrigido número de Defuses
+        {
+            cards.Add(new Card("Defuse"));
+        }
+
+        // Embaralhar o baralho
+        var rng = new Random();
+        return cards.OrderBy(card => rng.Next()).ToList();
+    }
+
+    private async Task StartGame()
+    {
+        try
+        {
+            shuffledDeck = GenerateDeck(numPlayers);
+
+            // Criar a instância do deck com as cartas embaralhadas
+            var deck = new Deck(shuffledDeck);
+
+            // Garantir que cada jogador receba uma carta "Defuse"
+            for (int i = 0; i < numPlayers; i++)
+            {
+                playerCards.Add(new Card("Defuse"));
+            }
+
+            // Distribuir 6 cartas adicionais para cada jogador
+            for (int i = 0; i < 6; i++)
+            {
+                var card = deck.Draw();
+                if (card != null)
+                {
+                    playerCards.Add(card);
+                }
+                else
+                {
+                    Console.WriteLine("Failed to draw card.");
+                }
+            }
+
+            gameStarted = true;
+            // Salvar as cartas iniciais do jogador no armazenamento local para serem recuperadas na página do jogo
+            await LocalStorage.SetItemAsync("playerCards", playerCards);
+            // Salvar o baralho embaralhado no armazenamento local
+            await LocalStorage.SetItemAsync("shuffledDeck", shuffledDeck);
+            NavigationManager.NavigateTo("/game");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error starting game: {ex.Message}");
+        }
+    }
+}

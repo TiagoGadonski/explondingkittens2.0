@@ -1,0 +1,240 @@
+﻿@page "/game"
+@inject HttpClient Http
+@using Blazored.LocalStorage
+@using BlazorApp2.Shared.Models
+@inject ILocalStorageService LocalStorage
+
+<h3>Jogo em Andamento</h3>
+
+@if (!gameOver)
+{
+    <button @onclick="DrawCard" disabled="@(!isCurrentPlayer)">Comprar Carta</button>
+}
+
+@if (players != null && players.Count > 0)
+{
+    <div style="display: flex; justify-content: space-between;">
+        @foreach (var player in players)
+        {
+            <div style="margin: 10px; padding: 10px; border: 1px solid black;">
+                <h4>@player.Name</h4>
+                <ul>
+                    @foreach (var card in player.Cards)
+                    {
+                        <li>@card.Type @if (!string.IsNullOrEmpty(card.CatName)) { <span>- @card.CatName</span> }</li>
+                    }
+                </ul>
+                @if (player.HasLost)
+                {
+                    <p>Perdeu o jogo!</p>
+                }
+            </div>
+        }
+    </div>
+}
+
+@if (nextCards != null && nextCards.Count > 0)
+{
+    <h4>Próximas 10 Cartas:</h4>
+    <ul>
+        @foreach (var card in nextCards)
+        {
+            <li>@card.Type @if (!string.IsNullOrEmpty(card.CatName)) { <span>- @card.CatName</span> }</li>
+        }
+    </ul>
+}
+
+@if (gameOver)
+{
+    <div class="alert alert-success">
+        <p>Jogo encerrado! O vencedor é @winner.Name!</p>
+    </div>
+}
+
+@if (showReturnCardDialog)
+{
+    <div class="return-card-dialog">
+        <h4>Escolha a posição para retornar a Exploding Kitten:</h4>
+        <input type="number" @bind="returnCardPosition" min="0" max="@deckSize" />
+        <button @onclick="ConfirmReturnCard">Confirmar</button>
+    </div>
+}
+
+@code {
+    private List<Player> players = new List<Player>();
+    private List<Card> nextCards = new List<Card>();
+    private Deck deck;
+    private bool gameOver = false;
+    private bool showReturnCardDialog = false;
+    private Card cardToReturn;
+    private int returnCardPosition;
+    private int deckSize;
+    private int currentPlayerIndex = 0;
+    private Player winner;
+
+    private bool isCurrentPlayer => players[currentPlayerIndex].IsCurrentPlayer && !players[currentPlayerIndex].HasLost;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine("Initializing game...");
+        await InitializeGame();
+    }
+
+    private async Task InitializeGame()
+    {
+        try
+        {
+            // Inicializar jogadores
+            players.Add(new Player { Name = "Jogador 1" });
+            players.Add(new Player { Name = "Jogador 2" });
+            players.Add(new Player { Name = "Jogador 3" });
+
+            // Recuperar cartas dos jogadores do armazenamento local
+            var initialCards = await Http.GetFromJsonAsync<List<List<Card>>>($"deck/start/{players.Count}");
+            for (int i = 0; i < players.Count; i++)
+            {
+                players[i].Cards = initialCards[i];
+                await LocalStorage.SetItemAsync($"{players[i].Name}Cards", players[i].Cards);
+            }
+
+            // Recuperar o baralho embaralhado do armazenamento local
+            var shuffledDeck = await LocalStorage.GetItemAsync<List<Card>>("shuffledDeck");
+            if (shuffledDeck == null || shuffledDeck.Count == 0)
+            {
+                Console.WriteLine("Failed to retrieve shuffled deck from local storage.");
+                shuffledDeck = new List<Card>();
+            }
+
+            // Inicializar o deck com as cartas embaralhadas
+            deck = new Deck(shuffledDeck);
+            deckSize = deck.GetDeckSize();
+
+            // Recuperar as próximas 10 cartas do baralho
+            await PeekNextCards();
+
+            // Definir o jogador atual
+            players[currentPlayerIndex].IsCurrentPlayer = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing game: {ex.Message}");
+        }
+    }
+
+    private async Task PeekNextCards()
+    {
+        try
+        {
+            nextCards = await Http.GetFromJsonAsync<List<Card>>($"deck/peek/10");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error retrieving next cards: {ex.Message}");
+        }
+    }
+
+    private async Task DrawCard()
+    {
+        try
+        {
+            Console.WriteLine("Tentando comprar uma carta...");
+            var card = await Http.GetFromJsonAsync<Card>("deck/draw");
+            deckSize--;
+            if (card != null)
+            {
+                Console.WriteLine($"Carta comprada: {card.Type}");
+                var currentPlayer = players[currentPlayerIndex];
+                if (card.Type == "Exploding Kitten")
+                {
+                    var defuseCard = currentPlayer.Cards.FirstOrDefault(c => c.Type == "Defuse");
+                    if (defuseCard != null)
+                    {
+                        // Remover a carta Defuse do jogador
+                        currentPlayer.Cards.Remove(defuseCard);
+                        Console.WriteLine("Usou uma carta Defuse para neutralizar a Exploding Kitten.");
+                        // Mostrar o diálogo para escolher a posição
+                        cardToReturn = card;
+                        showReturnCardDialog = true;
+                    }
+                    else
+                    {
+                        currentPlayer.HasLost = true; // O jogador perdeu o jogo
+                        Console.WriteLine($"{currentPlayer.Name} perdeu o jogo!");
+                    }
+                }
+                else
+                {
+                    currentPlayer.Cards.Add(card);
+                }
+
+                // Atualizar cartas do jogador no armazenamento local
+                await LocalStorage.SetItemAsync($"{currentPlayer.Name}Cards", currentPlayer.Cards);
+
+                // Atualizar a visualização das próximas 10 cartas
+                await PeekNextCards();
+
+                // Verificar se há um único vencedor
+                CheckForWinner();
+
+                if (!gameOver)
+                {
+                    // Alternar para o próximo jogador
+                    players[currentPlayerIndex].IsCurrentPlayer = false;
+                    do
+                    {
+                        currentPlayerIndex = (currentPlayerIndex + 1) % players.Count;
+                    } while (players[currentPlayerIndex].HasLost);
+                    players[currentPlayerIndex].IsCurrentPlayer = true;
+                }
+            }
+            else
+            {
+                Console.WriteLine("Falha ao comprar a carta: a resposta foi nula.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro ao comprar a carta: {ex.Message}");
+        }
+    }
+
+    private async Task ConfirmReturnCard()
+    {
+        try
+        {
+            if (cardToReturn != null)
+            {
+                // Retornar a carta Exploding Kitten ao baralho na posição especificada
+                await Http.PostAsJsonAsync($"deck/return/{returnCardPosition}", cardToReturn);
+                cardToReturn = null;
+                showReturnCardDialog = false;
+
+                // Atualizar a visualização das próximas 10 cartas
+                await PeekNextCards();
+
+                // Alternar para o próximo jogador após confirmar o retorno da carta
+                players[currentPlayerIndex].IsCurrentPlayer = false;
+                do
+                {
+                    currentPlayerIndex = (currentPlayerIndex + 1) % players.Count;
+                } while (players[currentPlayerIndex].HasLost);
+                players[currentPlayerIndex].IsCurrentPlayer = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro ao retornar a carta: {ex.Message}");
+        }
+    }
+
+    private void CheckForWinner()
+    {
+        var remainingPlayers = players.Where(p => !p.HasLost).ToList();
+        if (remainingPlayers.Count == 1)
+        {
+            winner = remainingPlayers[0];
+            gameOver = true;
+            Console.WriteLine($"O vencedor é {winner.Name}!");
+        }
+    }
+}
