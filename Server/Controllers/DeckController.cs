@@ -7,89 +7,97 @@ namespace BlazorApp2.Server.Controllers
     [Route("[controller]")]
     public class DeckController : ControllerBase
     {
-        private static Deck deck;
-        private static List<Card> shuffledDeck;
+        private static readonly string[] CatTypes = new[]
+        {
+            "Tacocat", "Hairy Potato Cat", "Rainbow Ralphing Cat", "Beard Cat", "Cattermelon"
+        };
 
         [HttpGet("start/{numPlayers}")]
-        public ActionResult<List<List<Card>>> StartGame(int numPlayers)
+        public List<List<Card>> GetInitialCards(int numPlayers)
         {
-            shuffledDeck = GenerateDeck(numPlayers);
-            deck = new Deck(shuffledDeck);
-
-            var initialCards = new List<List<Card>>();
+            var deck = InitializeDeck(numPlayers);
+            var initialHands = new List<List<Card>>();
             for (int i = 0; i < numPlayers; i++)
             {
-                var playerCards = new List<Card>();
+                var hand = new List<Card>();
                 for (int j = 0; j < 7; j++)
                 {
-                    playerCards.Add(deck.Draw());
+                    hand.Add(deck.Draw());
                 }
-                playerCards.Add(new Card("Defuse")); // Adicionar 1 carta Defuse para cada jogador
-                initialCards.Add(playerCards);
+                hand.Add(new Card("Defuse"));
+                initialHands.Add(hand);
             }
-
-            return Ok(initialCards);
-        }
-
-        private List<Card> GenerateDeck(int numPlayers)
-        {
-            var cards = new List<Card>();
-
-            // Adicionar cartas especiais
-            for (int i = 0; i < 10; i++) // 10 * 6 = 60 cartas
-            {
-                cards.Add(new Card("Attack"));
-                cards.Add(new Card("Skip"));
-                cards.Add(new Card("Favor"));
-                cards.Add(new Card("Shuffle"));
-                cards.Add(new Card("See the Future"));
-                cards.Add(new Card("Nope"));
-            }
-
-            // Adicionar cartas de gatos
-            string[] catNames = { "Tacocat", "Hairy Potato Cat", "Rainbow Ralphing Cat", "Beard Cat", "Cattermelon" };
-            foreach (var catName in catNames)
-            {
-                for (int i = 0; i < 4; i++) // Adicionar 4 de cada carta de gato
-                {
-                    cards.Add(new Card("Cat Card", catName));
-                }
-            }
-
-            // Adicionar cartas de Exploding Kitten e Defuse
-            for (int i = 0; i < numPlayers + 1; i++) // Aumentar o número de Exploding Kitten para testes
-            {
-                cards.Add(new Card("Exploding Kitten"));
-            }
-            for (int i = 0; i < numPlayers; i++) // Diminuir o número de Defuse
-            {
-                cards.Add(new Card("Defuse"));
-            }
-
-            // Embaralhar o baralho
-            var rng = new Random();
-            return cards.OrderBy(card => rng.Next()).ToList();
-        }
-
-        [HttpGet("draw")]
-        public ActionResult<Card> DrawCard()
-        {
-            var card = deck.Draw();
-            return card != null ? Ok(card) : NotFound("No more cards.");
+            return initialHands;
         }
 
         [HttpGet("peek/{count}")]
-        public ActionResult<List<Card>> PeekCards(int count)
+        public List<Card> PeekNextCards(int count)
         {
-            var cards = deck.Peek(count);
-            return cards != null ? Ok(cards) : NotFound("No more cards.");
+            return Deck.Peek(count);
+        }
+
+        [HttpGet("draw")]
+        public Card DrawCard()
+        {
+            return Deck.Draw();
         }
 
         [HttpPost("return/{position}")]
-        public IActionResult ReturnCardToPosition([FromBody] Card card, int position)
+        public IActionResult ReturnCardToDeck([FromRoute] int position, [FromBody] Card card)
         {
-            deck.ReturnCardToPosition(card, position);
+            Deck.ReturnCardToPosition(card, position);
             return Ok();
+        }
+
+        [HttpPost("shuffle")]
+        public IActionResult ShuffleDeck([FromBody] Deck deck)
+        {
+            deck.Shuffle();
+            return Ok();
+        }
+
+        private Deck InitializeDeck(int numPlayers)
+        {
+            var deck = new Deck();
+            int numExplodingKittens = numPlayers - 1;
+            int numDefuses = 6;
+
+            // Adicionando cartas Exploding Kitten
+            for (int i = 0; i < numExplodingKittens; i++)
+            {
+                deck.AddCard(new Card("Exploding Kitten"));
+            }
+
+            // Adicionando cartas Defuse
+            for (int i = 0; i < numDefuses; i++)
+            {
+                deck.AddCard(new Card("Defuse"));
+            }
+
+            // Adicionando outras cartas
+            AddCardsToDeck(deck, "Attack", 4);
+            AddCardsToDeck(deck, "Skip", 4);
+            AddCardsToDeck(deck, "Favor", 4);
+            AddCardsToDeck(deck, "Shuffle", 4);
+            AddCardsToDeck(deck, "See the Future", 5);
+            AddCardsToDeck(deck, "Nope", 5);
+
+            // Adicionando cartas de gato
+            foreach (var catType in CatTypes)
+            {
+                AddCardsToDeck(deck, catType, 4);
+            }
+
+            deck.Shuffle();
+            return deck;
+        }
+
+        private void AddCardsToDeck(Deck deck, string type, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                deck.AddCard(new Card(type));
+            }
         }
     }
 }

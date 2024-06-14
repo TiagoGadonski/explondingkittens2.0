@@ -6,5 +6,6 @@
         public List<Card> Cards { get; set; } = new List<Card>();
         public bool IsCurrentPlayer { get; set; }
         public bool HasLost { get; set; } = false;
+        public string Position { get; set; }
     }
 }

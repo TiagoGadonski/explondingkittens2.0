@@ -1,4 +1,4 @@
-﻿@page "/game"
+﻿@page "/game/{numPlayers:int}"
 @inject HttpClient Http
 @using Blazored.LocalStorage
 @using BlazorApp2.Shared.Models
@@ -8,25 +8,31 @@
 
 @if (!gameOver)
 {
-    <button @onclick="DrawCard" disabled="@(!isCurrentPlayer)">Comprar Carta</button>
-}
+    <div class="action-buttons">
+        <h4>É a vez de @players[currentPlayerIndex].Name</h4>
+        <button @onclick="DrawCard" disabled="@(!isCurrentPlayer)">Comprar Carta</button>
+    </div>
 
-@if (players != null && players.Count > 0)
-{
-    <div style="display: flex; justify-content: space-between;">
+    <div class="table">
         @foreach (var player in players)
         {
-            <div style="margin: 10px; padding: 10px; border: 1px solid black;">
+            <div class="player-area @(player.IsCurrentPlayer ? "current-player" : "")" style="grid-area: @player.Position;">
                 <h4>@player.Name</h4>
-                <ul>
+                <div class="card-list">
                     @foreach (var card in player.Cards)
                     {
-                        <li>@card.Type @if (!string.IsNullOrEmpty(card.CatName)) { <span>- @card.CatName</span> }</li>
+                        <div class="card">
+                            @card.DisplayName
+                            @if (isCurrentPlayer && CanPlayCard(card))
+                            {
+                                <button class="play-card-button" @onclick="() => PlayCard(card)">Jogar</button>
+                            }
+                        </div>
                     }
-                </ul>
+                </div>
                 @if (player.HasLost)
                 {
-                    <p>Perdeu o jogo!</p>
+                    <p class="lost-message">Perdeu o jogo!</p>
                 }
             </div>
         }
@@ -36,12 +42,12 @@
 @if (nextCards != null && nextCards.Count > 0)
 {
     <h4>Próximas 10 Cartas:</h4>
-    <ul>
+    <div class="next-cards-list">
         @foreach (var card in nextCards)
         {
-            <li>@card.Type @if (!string.IsNullOrEmpty(card.CatName)) { <span>- @card.CatName</span> }</li>
+            <div class="card">@card.DisplayName</div>
         }
-    </ul>
+    </div>
 }
 
 @if (gameOver)
@@ -60,7 +66,19 @@
     </div>
 }
 
+<div class="toast" style="display: @(showToast ? "block" : "none")">
+    <p>@toastMessage</p>
+</div>
+
+<div class="console">
+    @foreach (var log in logs)
+    {
+        <p>@log</p>
+    }
+</div>
+
 @code {
+    [Parameter] public int numPlayers { get; set; }
     private List<Player> players = new List<Player>();
     private List<Card> nextCards = new List<Card>();
     private Deck deck;
@@ -71,6 +89,10 @@
     private int deckSize;
     private int currentPlayerIndex = 0;
     private Player winner;
+    private bool hasPlayedCard = false;
+    private List<string> logs = new List<string>();
+    private bool showToast = false;
+    private string toastMessage = "";
 
     private bool isCurrentPlayer => players[currentPlayerIndex].IsCurrentPlayer && !players[currentPlayerIndex].HasLost;
 
@@ -85,9 +107,10 @@
         try
         {
             // Inicializar jogadores
-            players.Add(new Player { Name = "Jogador 1" });
-            players.Add(new Player { Name = "Jogador 2" });
-            players.Add(new Player { Name = "Jogador 3" });
+            for (int i = 1; i <= numPlayers; i++)
+            {
+                players.Add(new Player { Name = $"Jogador {i}", Position = $"p{i}" });
+            }
 
             // Recuperar cartas dos jogadores do armazenamento local
             var initialCards = await Http.GetFromJsonAsync<List<List<Card>>>($"deck/start/{players.Count}");
@@ -142,8 +165,9 @@
             deckSize--;
             if (card != null)
             {
-                Console.WriteLine($"Carta comprada: {card.Type}");
+                Console.WriteLine($"Carta comprada: {card.DisplayName}");
                 var currentPlayer = players[currentPlayerIndex];
+                ShowToast($"{currentPlayer.Name} comprou a carta: {card.DisplayName}");
                 if (card.Type == "Exploding Kitten")
                 {
                     var defuseCard = currentPlayer.Cards.FirstOrDefault(c => c.Type == "Defuse");
@@ -151,7 +175,7 @@
                     {
                         // Remover a carta Defuse do jogador
                         currentPlayer.Cards.Remove(defuseCard);
-                        Console.WriteLine("Usou uma carta Defuse para neutralizar a Exploding Kitten.");
+                        ShowToast($"{currentPlayer.Name} usou uma carta Defuse para neutralizar a Exploding Kitten.");
                         // Mostrar o diálogo para escolher a posição
                         cardToReturn = card;
                         showReturnCardDialog = true;
@@ -159,7 +183,7 @@
                     else
                     {
                         currentPlayer.HasLost = true; // O jogador perdeu o jogo
-                        Console.WriteLine($"{currentPlayer.Name} perdeu o jogo!");
+                        ShowToast($"{currentPlayer.Name} perdeu o jogo!");
                     }
                 }
                 else
@@ -185,16 +209,153 @@
                         currentPlayerIndex = (currentPlayerIndex + 1) % players.Count;
                     } while (players[currentPlayerIndex].HasLost);
                     players[currentPlayerIndex].IsCurrentPlayer = true;
+                    ShowToast($"É a vez de {players[currentPlayerIndex].Name}");
                 }
             }
             else
             {
-                Console.WriteLine("Falha ao comprar a carta: a resposta foi nula.");
+                ShowToast("Falha ao comprar a carta: a resposta foi nula.");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Erro ao comprar a carta: {ex.Message}");
+            ShowToast($"Erro ao comprar a carta: {ex.Message}");
+        }
+    }
+
+    private async Task PlayCard(Card card)
+    {
+        try
+        {
+            var currentPlayer = players[currentPlayerIndex];
+            if (currentPlayer.Cards.Contains(card))
+            {
+                currentPlayer.Cards.Remove(card);
+
+                // Adicionar lógica para as diferentes ações das cartas aqui
+                ShowToast($"{currentPlayer.Name} jogou a carta: {card.DisplayName}");
+                switch (card.Type)
+                {
+                    case "Attack":
+                        // Lógica para a carta de ataque
+                        await HandleAttackCard();
+                        break;
+                    case "Skip":
+                        // Lógica para a carta de pulo
+                        await HandleSkipCard();
+                        break;
+                    case "Favor":
+                        // Lógica para a carta de favor
+                        await HandleFavorCard();
+                        break;
+                    case "Shuffle":
+                        // Lógica para a carta de embaralhar
+                        await HandleShuffleCard();
+                        break;
+                    case "See the Future":
+                        // Lógica para a carta de ver o futuro
+                        await HandleSeeTheFutureCard();
+                        break;
+                    case "Nope":
+                        // Lógica para a carta de "não"
+                        HandleNopeCard();
+                        break;
+                    default:
+                        break;
+                }
+
+                // Atualizar cartas do jogador no armazenamento local
+                await LocalStorage.SetItemAsync($"{currentPlayer.Name}Cards", currentPlayer.Cards);
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"Erro ao jogar a carta: {ex.Message}");
+        }
+    }
+
+    private async Task HandleAttackCard()
+    {
+        // Terminar o turno sem comprar uma carta e obrigar o próximo jogador a jogar duas vezes
+        currentPlayerIndex = (currentPlayerIndex + 1) % players.Count;
+        players[currentPlayerIndex].IsCurrentPlayer = true;
+        ShowToast($"{players[currentPlayerIndex].Name} foi atacado e precisa jogar duas vezes.");
+        await DrawCard();
+        await DrawCard();
+    }
+
+    private async Task HandleSkipCard()
+    {
+        // Terminar o turno sem comprar uma carta
+        ShowToast("Pulou o turno.");
+        players[currentPlayerIndex].IsCurrentPlayer = false;
+        do
+        {
+            currentPlayerIndex = (currentPlayerIndex + 1) % players.Count;
+        } while (players[currentPlayerIndex].HasLost);
+        players[currentPlayerIndex].IsCurrentPlayer = true;
+        ShowToast($"É a vez de {players[currentPlayerIndex].Name}");
+    }
+
+    private async Task HandleFavorCard()
+    {
+        // Solicitar uma carta de outro jogador
+        var targetPlayer = players.FirstOrDefault(p => p != players[currentPlayerIndex] && !p.HasLost);
+        if (targetPlayer != null && targetPlayer.Cards.Count > 0)
+        {
+            var card = targetPlayer.Cards.First();
+            targetPlayer.Cards.Remove(card);
+            players[currentPlayerIndex].Cards.Add(card);
+            ShowToast($"{players[currentPlayerIndex].Name} recebeu uma carta de {targetPlayer.Name}");
+            await LocalStorage.SetItemAsync($"{targetPlayer.Name}Cards", targetPlayer.Cards);
+            await LocalStorage.SetItemAsync($"{players[currentPlayerIndex].Name}Cards", players[currentPlayerIndex].Cards);
+        }
+    }
+
+    private async Task HandleShuffleCard()
+    {
+        // Embaralhar o baralho
+        await Http.PostAsJsonAsync("deck/shuffle", deck);
+        ShowToast("O baralho foi embaralhado.");
+        await PeekNextCards();
+    }
+
+    private async Task HandleSeeTheFutureCard()
+    {
+        // Ver as próximas 3 cartas do baralho
+        var futureCards = await Http.GetFromJsonAsync<List<Card>>("deck/peek/3");
+        ShowToast("Próximas 3 cartas:");
+        foreach (var card in futureCards)
+        {
+            ShowToast(card.DisplayName);
+        }
+    }
+
+    private void HandleNopeCard()
+    {
+        // Cancelar a ação de outra carta
+        ShowToast("Ação cancelada.");
+    }
+
+    private void HandleCatCard(Card card)
+    {
+        var currentPlayer = players[currentPlayerIndex];
+        var similarCards = currentPlayer.Cards.Where(c => c.Type == card.Type).ToList();
+        if (similarCards.Count == 2)
+        {
+            // Implementar lógica para roubar uma carta de outro jogador
+        }
+        else if (similarCards.Count == 3)
+        {
+            // Implementar lógica para pedir uma carta específica de outro jogador
+        }
+        else if (currentPlayer.Cards.GroupBy(c => c.Type).Where(g => g.Count() == 1).Count() == 5)
+        {
+            // Implementar lógica para escolher uma das cartas que já foram jogadas na mesa
+        }
+        else
+        {
+            ShowToast("Você não pode jogar essa carta de gato agora.");
         }
     }
 
@@ -219,11 +380,12 @@
                     currentPlayerIndex = (currentPlayerIndex + 1) % players.Count;
                 } while (players[currentPlayerIndex].HasLost);
                 players[currentPlayerIndex].IsCurrentPlayer = true;
+                ShowToast($"É a vez de {players[currentPlayerIndex].Name}");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Erro ao retornar a carta: {ex.Message}");
+            ShowToast($"Erro ao retornar a carta: {ex.Message}");
         }
     }
 
@@ -234,7 +396,44 @@
         {
             winner = remainingPlayers[0];
             gameOver = true;
-            Console.WriteLine($"O vencedor é {winner.Name}!");
+            ShowToast($"O vencedor é {winner.Name}!");
         }
+    }
+
+    private void ShowToast(string message)
+    {
+        toastMessage = message;
+        showToast = true;
+        StateHasChanged();
+
+        var timer = new System.Timers.Timer(3000);
+        timer.Elapsed += (sender, args) =>
+        {
+            showToast = false;
+            StateHasChanged();
+            timer.Dispose();
+        };
+        timer.Start();
+    }
+
+    private bool CanPlayCard(Card card)
+    {
+        var currentPlayer = players[currentPlayerIndex];
+        if (card.Type == "Defuse" && currentPlayer.Cards.All(c => c.Type != "Exploding Kitten"))
+        {
+            return false;
+        }
+
+        if (card.Type.Contains("Cat"))
+        {
+            var similarCards = currentPlayer.Cards.Where(c => c.Type == card.Type).ToList();
+            if (similarCards.Count == 2 || similarCards.Count == 3 || currentPlayer.Cards.GroupBy(c => c.Type).Where(g => g.Count() == 1).Count() == 5)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        return true;
     }
 }
