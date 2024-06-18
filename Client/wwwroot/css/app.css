@@ -1,13 +1,12 @@
 ﻿.table {
     display: grid;
     grid-template-areas:
-        "p1 p1 p1 p1 p1 p1"
+        "center center center center center center"
         "p2 center center center center p5"
         "p3 center center center center p4";
     gap: 10px;
-    margin: 20px;
     max-width: 800px;
-    margin: 0 auto;
+    margin: 20px auto;
 }
 
 .player-area {
@@ -18,7 +17,7 @@
     padding: 10px;
     background-color: #f9f9f9;
     border-radius: 5px;
-    width: 100px;
+    text-align: center;
 }
 
     .player-area.current-player {
@@ -99,4 +98,12 @@
     max-width: 90%;
     text-align: center;
     display: none;
+}
+
+.center-area {
+    grid-area: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }

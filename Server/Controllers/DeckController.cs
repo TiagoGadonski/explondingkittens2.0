@@ -12,10 +12,20 @@ namespace BlazorApp2.Server.Controllers
             "Tacocat", "Hairy Potato Cat", "Rainbow Ralphing Cat", "Beard Cat", "Cattermelon"
         };
 
+        private static Deck deck;
+
+        public DeckController()
+        {
+            if (deck == null)
+            {
+                deck = InitializeDeck(4); // Inicialize com um número padrão de jogadores, pode ser ajustado conforme necessário
+            }
+        }
+
         [HttpGet("start/{numPlayers}")]
         public List<List<Card>> GetInitialCards(int numPlayers)
         {
-            var deck = InitializeDeck(numPlayers);
+            deck = InitializeDeck(numPlayers);
             var initialHands = new List<List<Card>>();
             for (int i = 0; i < numPlayers; i++)
             {
@@ -33,24 +43,24 @@ namespace BlazorApp2.Server.Controllers
         [HttpGet("peek/{count}")]
         public List<Card> PeekNextCards(int count)
         {
-            return Deck.Peek(count);
+            return deck.Peek(count);
         }
 
         [HttpGet("draw")]
         public Card DrawCard()
         {
-            return Deck.Draw();
+            return deck.Draw();
         }
 
         [HttpPost("return/{position}")]
         public IActionResult ReturnCardToDeck([FromRoute] int position, [FromBody] Card card)
         {
-            Deck.ReturnCardToPosition(card, position);
+            deck.ReturnCardToPosition(card, position);
             return Ok();
         }
 
         [HttpPost("shuffle")]
-        public IActionResult ShuffleDeck([FromBody] Deck deck)
+        public IActionResult ShuffleDeck()
         {
             deck.Shuffle();
             return Ok();

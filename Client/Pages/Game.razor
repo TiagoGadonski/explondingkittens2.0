@@ -8,11 +8,6 @@
 
 @if (!gameOver)
 {
-    <div class="action-buttons">
-        <h4>É a vez de @players[currentPlayerIndex].Name</h4>
-        <button @onclick="DrawCard" disabled="@(!isCurrentPlayer)">Comprar Carta</button>
-    </div>
-
     <div class="table">
         @foreach (var player in players)
         {
@@ -36,17 +31,23 @@
                 }
             </div>
         }
-    </div>
-}
+        <div class="center-area">
+            <div class="action-buttons">
+                <h4>É a vez de @players[currentPlayerIndex].Name</h4>
+                <button @onclick="DrawCard" disabled="@(!isCurrentPlayer)">Comprar Carta</button>
+            </div>
 
-@if (nextCards != null && nextCards.Count > 0)
-{
-    <h4>Próximas 10 Cartas:</h4>
-    <div class="next-cards-list">
-        @foreach (var card in nextCards)
-        {
-            <div class="card">@card.DisplayName</div>
-        }
+            @if (nextCards != null && nextCards.Count > 0)
+            {
+                <h4>Próximas 10 Cartas:</h4>
+                <div class="next-cards-list">
+                    @foreach (var card in nextCards)
+                    {
+                        <div class="card">@card.DisplayName</div>
+                    }
+                </div>
+            }
+        </div>
     </div>
 }
 
